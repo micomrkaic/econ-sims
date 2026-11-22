@@ -1,0 +1,30 @@
+# econ-sims CI: build the four programs and run every model's checks, then a
+# headless frame run of each, on Linux and macOS.
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: build
+        run: make -j4
+      - name: model checks and headless frames
+        run: make test
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: brew install sdl2
+      - name: build
+        run: make -j4
+      - name: model checks and headless frames
+        run: make test
