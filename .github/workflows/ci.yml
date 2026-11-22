@@ -1,4 +1,5 @@
-# econ-sims CI: build the four programs and run every model's checks, then a
+# econ-sims CI: build the seven programs (three of them with the vendored Cozy
+# interpreter inside) and run every model's checks, then a
 # headless frame run of each, on Linux and macOS.
 name: ci
 on:

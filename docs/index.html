@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>econ-sims — economics you can watch</title>
-<meta name="description" content="Four economic models as interactive simulations with sliders: Schelling segregation, the wealth distribution under income risk, a bank run, and a limit order book. Written in C, running in your browser.">
+<meta name="description" content="Economic models as interactive simulations with sliders: Schelling segregation, the wealth distribution under income risk, a bank run, a limit order book, and three macro models solved live by the Cozy language. Written in C, running in your browser.">
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; background: #0b0e14; color: #c3c7d0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -15,7 +15,10 @@
   main { max-width: 1120px; margin: 0 auto; padding: 0 16px 56px; }
   h1 { font-size: 30px; line-height: 1.2; color: #f0efec; margin: 36px 0 10px; letter-spacing: -0.01em; }
   .lede { max-width: 70ch; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 18px; margin-top: 24px; }
+  h2.part { font-size: 21px; color: #f0efec; margin: 40px 0 6px; }
+  h2.part + .lede { margin-top: 0; }
+  .grid + h2.part { margin-top: 48px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 18px; margin-top: 18px; }
   .card { display: block; background: #11151f; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; color: inherit; text-decoration: none; }
   .card:hover, .card:focus-visible { border-color: #3987e5; outline: none; }
   .card img { display: block; width: 100%; height: auto; aspect-ratio: 1180 / 720; background: #0b0e14; border-bottom: 1px solid rgba(255,255,255,.1); }
@@ -34,9 +37,11 @@
 </header>
 <main>
   <h1>Economics you can watch</h1>
-  <p class="lede">Four models from the economics curriculum, each as a small simulation with sliders. Every one is a
+  <p class="lede">Models from the economics curriculum, each as a small simulation with sliders. Every one is a
   single file of C that runs here as WebAssembly and builds as a native program from the same source. Move a slider and
   the model responds at once: nothing is recorded, everything is computed as you watch.</p>
+  <h2 class="part">Four models of people and markets</h2>
+  <p class="lede">Agents on a grid, households facing risk, depositors and traders, each following a simple rule.</p>
   <div class="grid">
     <a class="card" href="schelling.html">
       <img src="img/schelling.png" alt="A grid of blue and orange agents sorting into patches" width="1180" height="720">
@@ -59,11 +64,35 @@
       <p>Random orders produce a spread and depth; a few informed traders make the price follow fundamental value.</p></div>
     </a>
   </div>
+  <h2 class="part">Three macro models, solved live by Cozy</h2>
+  <p class="lede">These write their model as a few lines of text, in the notation of Dynare, and show it on screen.
+  <a href="https://github.com/micomrkaic/cozy">Cozy</a>, a small matrix language, is compiled into each page; its
+  <code>dsge</code> package linearises the model and solves it again every time a slider moves, in about a
+  millisecond. The same package runs on its own in <a href="https://micomrkaic.github.io/cozy/dsge.html">Cozy's
+  playground</a>.</p>
+  <div class="grid">
+    <a class="card" href="nk.html">
+      <img src="img/nk.png" alt="Scrolling charts of the output gap, inflation and the policy rate, with the model's equations beneath" width="1180" height="720">
+      <div><h2>A New Keynesian economy</h2>
+      <p>An interest-rate rule, sticky prices and a stream of shocks. Respond too little to inflation and the equilibrium is no longer unique.</p></div>
+    </a>
+    <a class="card" href="cycles.html">
+      <img src="img/cycles.png" alt="Output, consumption and investment fluctuating together, and a table of volatilities and correlations" width="1180" height="720">
+      <div><h2>Business cycles</h2>
+      <p>Technology shocks and households that respond: investment swings widely, consumption is smooth, and the table shows it.</p></div>
+    </a>
+    <a class="card" href="irf.html">
+      <img src="img/irf.png" alt="Six small plots of the responses to a monetary tightening" width="1180" height="720">
+      <div><h2>Impulse responses</h2>
+      <p>One shock, forty quarters, six variables. Change a parameter and compare the path with the one you pinned.</p></div>
+    </a>
+  </div>
   <footer>
     <p>Each model has checks that run without a window (<code>make test</code>): Schelling's result itself, the Euler
-    equation and a closed-form case for the household problem, the bank's accounting and each policy remedy, and the
-    order book's invariants and comparative statics. The source, build instructions and the native programs are in the
-    <a href="https://github.com/micomrkaic/econ-sims">repository</a>.</p>
+    equation and a closed-form case for the household problem, the bank's accounting and each policy remedy, the
+    order book's invariants and comparative statics, and for the macro models the published closed form, the Taylor
+    principle and agreement between simulated and theoretical moments. The source, build instructions and the native
+    programs are in the <a href="https://github.com/micomrkaic/econ-sims">repository</a>.</p>
   </footer>
 </main>
 </body>

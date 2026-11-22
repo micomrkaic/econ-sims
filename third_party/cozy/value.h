@@ -1,0 +1,169 @@
+/* value.h — Cozy runtime values.
+ *
+ * Scalars (null, bool, int64, f64, complex) are immediate — stored inline in
+ * Value, no allocation. Everything else (string, array, record, closure,
+ * builtin, env) is a refcounted heap Obj. The numeric tower is int -> float
+ * -> complex; arrays carry one EltType so an index array is provably integer. */
+#ifndef COZY_VALUE_H
+#define COZY_VALUE_H
+
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include "ast.h"
+
+typedef struct { double re, im; } Cplx;
+typedef struct { double v, e; } Dual;   /* v + e*eps, eps^2 = 0 (design entry 4a) */
+typedef struct { double v, e1, e2, e12; } HDual;  /* hyper-dual: two nilpotents,
+    eps1^2 = eps2^2 = 0, eps1*eps2 kept — one pass yields an exact mixed
+    second partial in e12 (design entry 4a, Hessian increment) */
+
+typedef enum : uint8_t {
+    VAL_NULL, VAL_BOOL, VAL_INT, VAL_FLOAT, VAL_COMPLEX,
+    VAL_STRING, VAL_ARRAY, VAL_RECORD, VAL_CLOSURE, VAL_BUILTIN,
+    VAL_SPARSE,                     /* appended: existing kind numbers stable */
+    VAL_DUAL,                       /* dual number a + b*eps — immediate scalar */
+    VAL_HDUAL,                      /* hyper-dual a + b*eps1 + c*eps2 + d*eps1eps2 — immediate */
+    VAL_DATE,                       /* calendar date: days since 1970-01-01 UTC in a
+                                       double (fractional part = time of day); entry 16 —
+                                       display-typed, strict dimensional algebra */
+} ValueKind;
+
+/* array element type — the numeric tower plus a logical (Bool) element */
+typedef enum : uint8_t { ELT_INT, ELT_FLOAT, ELT_COMPLEX, ELT_BOOL, ELT_STRING, ELT_DUAL, ELT_HDUAL, ELT_DATE } EltType;
+
+typedef struct Obj Obj;
+
+typedef struct {
+    ValueKind kind;
+    union {
+        bool     b;
+        int64_t  i;
+        double   f;
+        Cplx     z;
+        Dual     d;
+        HDual    h;                 /* grows the union to 32 bytes; see the
+                                       sizeof(Value) note at readcsv's assert */
+        Obj     *obj;   /* STRING, ARRAY, RECORD, CLOSURE, BUILTIN */
+    } as;
+} Value;
+
+struct Obj { ValueKind kind; uint32_t rc; };
+
+typedef struct { Obj obj; char *data; uint32_t len; } StrObj;
+typedef struct { Obj obj; EltType elt; uint32_t rows, cols; void *data; } ArrObj;
+
+/* Sparse matrix, CSR (design entry 1): a separate kind, never a flag on
+ * ArrObj, so every builtin that does not know sparse rejects it by type.
+ * elt is ELT_FLOAT or ELT_COMPLEX only; vals holds nnz doubles or Cplx.
+ * Invariants: rowptr has rows+1 entries, rowptr[rows] == nnz, colind
+ * ascending within each row, no explicit zeros stored. */
+typedef struct { Obj obj; EltType elt; uint32_t rows, cols, nnz;
+                 uint32_t *rowptr; uint32_t *colind; void *vals; } SpObj;
+
+typedef struct {
+    Obj obj;
+    uint32_t count;
+    const char **keys;   /* non-owning: point into source */
+    uint32_t    *keylens;
+    Value       *vals;   /* owned refs */
+    bool         owns_keys;  /* readtable: keys are strdup'd, freed with the record */
+} RecObj;
+
+typedef struct EnvObj EnvObj;
+struct Chunk;   /* chunk.h — a compiled function proto */
+
+typedef struct {
+    Obj obj;
+    struct Chunk *chunk;   /* compiled proto (non-owning; lives in a retained chunk) */
+    Value   *upvalues;     /* value-capture snapshots of free variables (owned)      */
+    uint32_t nupvalues;
+} CloObj;
+
+struct Interp;          /* eval.h */
+typedef Value (*BuiltinFn)(struct Interp *I, Value *args, uint32_t n);
+
+typedef struct {
+    Obj obj;
+    const char *name;
+    BuiltinFn   fn;
+    uint32_t    min_arity, max_arity;   /* max_arity == UINT32_MAX ⇒ variadic */
+} BuiltinObj;
+
+struct EnvObj {
+    Obj obj;
+    EnvObj      *parent;     /* owned ref (nullptr at global) */
+    uint32_t     count, cap;
+    uint32_t     n_protected;  /* slots below this: standard library (see env_define) */
+    const char **names;      /* OWNED copies since entry 11 (bindings outlive
+                                the defining line's source buffer) */
+    uint32_t    *namelens;
+    Value       *vals;       /* owned refs */
+};
+
+/* --- refcounting --- */
+Value value_retain(Value v);
+void  value_release(Value v);
+
+/* --- scalar constructors (immediate) --- */
+static inline Value val_null(void)        { return (Value){ .kind = VAL_NULL }; }
+static inline Value val_bool(bool b)      { return (Value){ .kind = VAL_BOOL,  .as.b = b }; }
+static inline Value val_int(int64_t i)    { return (Value){ .kind = VAL_INT,   .as.i = i }; }
+static inline Value val_float(double f)   { return (Value){ .kind = VAL_FLOAT, .as.f = f }; }
+static inline Value val_complex(double re, double im) { return (Value){ .kind = VAL_COMPLEX, .as.z = { re, im } }; }
+static inline Value val_dual(double v, double e)      { return (Value){ .kind = VAL_DUAL,    .as.d = { v, e } }; }
+static inline Value val_hdual(double v, double e1, double e2, double e12)
+                                                      { return (Value){ .kind = VAL_HDUAL,   .as.h = { v, e1, e2, e12 } }; }
+static inline Value val_date(double days)             { return (Value){ .kind = VAL_DATE,    .as.f = days }; }
+
+/* --- heap constructors (return +1 ref) --- */
+Value val_string(const char *bytes, uint32_t len);   /* copies */
+Value val_array(EltType elt, uint32_t rows, uint32_t cols);   /* zeroed */
+Value val_record(uint32_t count);                    /* keys/vals filled by caller */
+Value val_closure_vm(struct Chunk *proto, Value *upvalues, uint32_t nup);  /* takes ownership of upvalues */
+Value val_builtin(const char *name, BuiltinFn fn, uint32_t min_arity, uint32_t max_arity);
+
+/* --- accessors --- */
+static inline StrObj     *as_str(Value v) { return (StrObj *)v.as.obj; }
+static inline ArrObj     *as_arr(Value v) { return (ArrObj *)v.as.obj; }
+static inline RecObj     *as_rec(Value v) { return (RecObj *)v.as.obj; }
+static inline CloObj     *as_clo(Value v) { return (CloObj *)v.as.obj; }
+static inline BuiltinObj *as_blt(Value v) { return (BuiltinObj *)v.as.obj; }
+
+size_t elt_size(EltType e);
+Value  arr_get(const ArrObj *a, size_t flat);          /* element -> scalar Value */
+void   arr_set(ArrObj *a, size_t flat, Value scalar);  /* scalar coerced to a->elt */
+
+/* --- environment --- */
+EnvObj *env_new(EnvObj *parent);                       /* returns +1 ref */
+void    env_retain(EnvObj *e);
+void    env_release(EnvObj *e);
+void    env_define(EnvObj *e, const char *name, uint32_t len, Value v);  /* retains v */
+bool    env_assign(EnvObj *e, const char *name, uint32_t len, Value v);  /* update existing up the chain; retains v */
+bool    env_lookup(EnvObj *e, const char *name, uint32_t len, Value *out); /* out gets +1 */
+void    env_clear(EnvObj *e);   /* release all bindings (breaks closure/env cycles at teardown) */
+
+void value_print(FILE *out, Value v);
+const char *value_type_name(Value v);   /* "Int", "Array", ... for diagnostics */
+
+/* number display formatting (affects Float and Complex parts) */
+typedef enum { NFMT_G, NFMT_F, NFMT_E } NumFmtStyle;
+void        value_format_set(NumFmtStyle style, int prec);
+bool        value_format_by_name(const char *name);  /* "short"/"long"/"short e"/... ; false if unknown */
+const char *value_format_desc(void);                 /* human label of the current setting */
+void        value_format_get(NumFmtStyle *style, int *prec, bool *trailing);   /* snapshot */
+void        value_format_restore(NumFmtStyle style, int prec, bool trailing);  /* put a snapshot back */
+
+/* output stream indirection — lets the REPL capture output for paging */
+FILE *vout(void);                /* current output stream (defaults to stdout) */
+void  value_set_out(FILE *f);    /* nullptr restores stdout */
+
+/* multi-line aligned matrix display (off by default; the REPL enables it) */
+void value_set_multiline(bool on);
+bool value_multiline(void);
+
+static inline bool   is_sparse(Value v) { return v.kind == VAL_SPARSE; }
+static inline SpObj *as_sp(Value v)      { return (SpObj *)v.as.obj; }
+Value val_sparse(EltType elt, uint32_t rows, uint32_t cols, uint32_t nnz);
+
+#endif

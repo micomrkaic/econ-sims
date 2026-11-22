@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>econ-sims</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0e14; color: #c3c7d0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  header a { color: #c3c7d0; text-decoration: none; font-size: 13px; padding: 4px 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 6px; }
+  header a:hover { color: #3987e5; border-color: #3987e5; }
+  header .name { font-weight: 700; color: #f0efec; border: 0; padding: 0; font-size: 16px; }
+  header nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+  main { max-width: 1212px; margin: 0 auto; padding: 16px; }
+  /* The simulation draws on a fixed 1180 x 720 canvas; the page scales it down to fit. */
+  /* SDL writes its own pixel size into the canvas's style; !important keeps the page's fluid one. */
+  canvas { display: block; width: 100% !important; max-width: 1180px; height: auto !important; aspect-ratio: 1180 / 720;
+           margin: 0 auto; background: #0b0e14; border: 1px solid rgba(255,255,255,.1); border-radius: 8px;
+           outline: none; box-sizing: content-box; }
+  #status { font-size: 13px; color: #8a93a3; min-height: 20px; margin: 0 0 8px; }
+  h1 { font-size: 22px; color: #f0efec; margin: 22px 0 6px; }
+  p, li { max-width: 74ch; }
+  ul { padding-left: 20px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  a { color: #3987e5; }
+</style>
+</head>
+<body>
+<header>
+  <a class="name" href="index.html">econ-sims</a>
+  <nav>
+    <a href="schelling.html">Segregation</a>
+    <a href="wealth.html">Wealth</a>
+    <a href="bankrun.html">Bank run</a>
+    <a href="orderbook.html">Order book</a>
+    <a href="nk.html">New Keynesian</a>
+    <a href="cycles.html">Business cycles</a>
+    <a href="irf.html">Impulse responses</a>
+    <a href="https://github.com/micomrkaic/econ-sims">Source</a>
+  </nav>
+</header>
+<main>
+  <p id="status" role="status">Loading…</p>
+  <canvas id="canvas" width="1180" height="720" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+  <h1 id="title"></h1>
+  <div id="about"></div>
+</main>
+<script>
+  // One shell serves every page; the text under the canvas is chosen by file name.
+  // The macro pages run on Cozy, an interpreter linked into the simulation.
+  var COZY = "<p>The equations in the picture are not decoration. The program hands that text to <a href=\"https://github.com/micomrkaic/cozy\">Cozy</a>, a small matrix language whose interpreter is compiled into this page, and Cozy's <code>dsge</code> package linearises the model with exact derivatives and solves it, in about a millisecond, each time a slider moves. You can <a href=\"https://micomrkaic.github.io/cozy/dsge.html\">work with the same package directly</a> in Cozy's own playground.</p>";
+  var PAGES = {
+    schelling: ["Schelling's segregation model",
+      "<p>Two groups share a grid with some empty cells. An agent is content if at least a chosen share of its neighbours belong to its own group; a discontent agent moves to an empty cell where it would be content. Nobody in this city wants segregation, yet it sorts itself: agents who would be happy as a 35% minority end up in neighbourhoods that are about three-quarters their own group.</p>" +
+      "<ul><li>Raise <em>Like neighbours wanted</em> slowly from 0.2 and watch for the point where the city tips.</li><li>Make one group a small minority and see who ends up isolated.</li><li>Widen the neighbourhood radius: the patches grow.</li></ul>"],
+    wealth: ["Wealth distribution with income risk",
+      "<p>Each household earns a wage when employed and a benefit when not, and cannot insure against losing its job. It saves to protect itself, choosing consumption optimally given the interest rate and a borrowing limit. The histogram is the wealth of 20,000 such households; everyone has the same preferences and the same luck on average, and the inequality you see comes from the history of shocks alone.</p>" +
+      "<ul><li>Raise the interest rate towards the households' impatience: saving explodes.</li><li>Loosen the borrowing limit and watch the left tail fill with debtors.</li><li>Raise the unemployment benefit: less need to save, a more equal but poorer distribution.</li></ul>"],
+    bankrun: ["A bank run",
+      "<p>A bank holds a fraction of its deposits as cash and lends the rest; loans called in early are worth less. Some depositors genuinely need their money. The others watch their neighbours, and withdraw if they come to expect more withdrawals than the bank can meet. That fear can make itself true: a sound bank fails because enough people believed it would.</p>" +
+      "<ul><li>Start a rumour at a bank with thin reserves, then repeat with deposit insurance.</li><li>Turn on suspension of withdrawals, or the lender of last resort, and see the run lose its point.</li><li>Raise the fire-sale value of loans: runs stop being rational.</li></ul>"],
+    orderbook: ["A limit order book",
+      "<p>Traders post offers to buy and sell at prices of their choosing, cancel them at random, or trade at once against the best offer available. Nobody here is clever: orders arrive at random, apart from a share of informed traders who know the asset's fundamental value. A spread, a depth profile and a price that tracks value all emerge from the order flow.</p>" +
+      "<ul><li>Cut the rate of limit orders: the book thins and the spread widens.</li><li>Send a large sell order and watch the price fall through the book and recover.</li><li>Set the informed share to zero: the price forgets the fundamental value.</li></ul>"],
+    nk: ["A New Keynesian economy, live",
+      "<p>The textbook model of monetary policy: firms that change prices slowly, households that spread spending over time, and a central bank that sets the interest rate by a rule. Demand and policy disturbances arrive every quarter, and the output gap, inflation and the policy rate respond as the model says they must.</p>" +
+      "<ul><li>Lower the rule's response to inflation below one. The model no longer has a single equilibrium, and the economy stops: this is the Taylor principle.</li><li>Press <em>Rate hike</em> and watch output and inflation fall together.</li><li>Raise the response to inflation and compare the central bank's loss.</li></ul>" + COZY],
+    cycles: ["Business cycles, live",
+      "<p>The real business cycle model. Households choose how much to consume, save and work; firms hire capital and labour; technology is the only thing that is disturbed. The model reproduces the best-known regularities of business cycles: investment swings several times as widely as output, consumption is smoother, and all of them move together.</p>" +
+      "<ul><li>Read the table as the run lengthens: the run's figures settle on the model's.</li><li>Raise risk aversion past 4: households dislike uneven consumption so much that hours start to move against output.</li><li>Make technology less persistent, and investment reacts less: a brief windfall is not worth building for.</li></ul>" + COZY],
+    irf: ["Impulse responses",
+      "<p>What happens after a single shock, quarter by quarter: a rise in technology in the business cycle model, or a monetary tightening or a rise in demand in the New Keynesian model. The blue line is the model at the sliders' settings and the grey line a reference, the textbook calibration until you pin another.</p>" +
+      "<ul><li>Choose <em>Rate hike</em>, pin the reference, then steepen the Phillips curve: the same tightening costs less output and removes more inflation.</li><li>Under <em>Technology</em>, lower the persistence and watch the hump in capital disappear.</li><li>Under <em>Demand</em>, raise the rule's response to inflation towards 3: policy absorbs the shock.</li></ul>" + COZY]
+  };
+  var page = (location.pathname.split("/").pop() || "").replace(/\.html$/, "");
+  var info = PAGES[page];
+  if (info) {
+    document.title = info[0] + " — econ-sims";
+    document.getElementById("title").textContent = info[0];
+    document.getElementById("about").innerHTML = info[1] +
+      "<p>Drag the sliders. <code>Space</code> pauses and <code>R</code> restarts (click the picture first so it has the keyboard). The same C source builds a native program; see the repository.</p>";
+  }
+  var statusEl = document.getElementById("status");
+  var Module = {
+    canvas: document.getElementById("canvas"),
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+    setStatus: function (t) { statusEl.textContent = t || ""; },
+    onRuntimeInitialized: function () { statusEl.textContent = ""; document.documentElement.setAttribute("data-ready", "1"); }
+  };
+  window.addEventListener("error", function () { statusEl.textContent = "The simulation could not start in this browser."; });
+</script>
+<script async type="text/javascript" src="cycles.js"></script>
+</body>
+</html>
+
+

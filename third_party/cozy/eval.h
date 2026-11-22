@@ -1,0 +1,39 @@
+/* eval.h — interpreter state and runtime entry points for Cozy.
+ *
+ * The evaluator is the bytecode VM (vm.c); this header owns the shared Interp
+ * state, builtin-environment construction, and the runtime helpers the VM and
+ * the builtins call (apply_binop, transpose, do_index, build_matrix, ... — see
+ * nrt.h). The original tree-walker was removed at the stage-4 cutover. */
+#ifndef COZY_EVAL_H
+#define COZY_EVAL_H
+
+#include <setjmp.h>
+#include <stdio.h>
+#include "value.h"
+#include "ast.h"
+
+typedef struct Interp {
+    jmp_buf  jmp;
+    char     err[1024];           /* message + appended backtrace lines */
+    void    *vm_cur;              /* innermost running VM (vm.c), for backtraces */
+    uint32_t cur_line, cur_col;   /* updated as evaluation proceeds, for diagnostics */
+    bool     had_error;
+    EnvObj  *globals;             /* current global frame (for who/help introspection) */
+    uint64_t rng_s[4];            /* xoshiro256** state (never all-zero) */
+    bool     line_borrows_src;    /* set by the compiler when the compiled line
+                                     creates values pointing into its source or
+                                     arena (closures via chunk->src, record
+                                     literals via non-owning keys): the session
+                                     retains arena+src iff so (entry 11) */
+} Interp;
+
+void    interp_init(Interp *I);
+/* append "    in <name> (line N)" frames of the running VM chain to buf (vm.c) */
+void    vm_backtrace(Interp *I, char *buf, size_t cap);
+const char *exe_dir(void);                 /* dir of the running binary ("" in wasm) */
+FILE   *fopen_asset(const char *path);     /* read-only open: cwd, exe dir, installed share */
+EnvObj *globals_new(void);                 /* env preloaded with builtins (+1 ref) */
+
+Value eval_map_builtin(void);
+
+#endif

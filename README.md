@@ -2,9 +2,15 @@
 
 [![ci](https://github.com/micomrkaic/econ-sims/actions/workflows/ci.yml/badge.svg)](https://github.com/micomrkaic/econ-sims/actions/workflows/ci.yml)
 
-Four models from the economics curriculum, each as a small simulation with
+Seven models from the economics curriculum, each as a small simulation with
 sliders. Every one is a single file of C17 on SDL2: it builds as a native
 program and, from the same source, as a WebAssembly page.
+
+Four are models of people and markets, simulated agent by agent. Three are
+macro models, and those do not solve their equations in C: they hand the
+model, as text, to [Cozy](https://github.com/micomrkaic/cozy), a matrix
+language whose interpreter is linked into the program, and run on what its
+`dsge` package returns.
 
 **[Run them in the browser](https://micomrkaic.github.io/econ-sims/)**
 
@@ -14,6 +20,10 @@ program and, from the same source, as a WebAssembly page.
 | **Schelling's segregation model.** Agents move when too few neighbours are like them. | **Wealth when income is risky.** Households save against job loss; inequality from luck alone. |
 | [![Bank run](docs/img/bankrun.png)](https://micomrkaic.github.io/econ-sims/bankrun.html) | [![Order book](docs/img/orderbook.png)](https://micomrkaic.github.io/econ-sims/orderbook.html) |
 | **A bank run.** A rumour, a queue, and a solvent bank that fails anyway. | **A limit order book.** Random orders make a market; informed ones make the price mean something. |
+| [![New Keynesian](docs/img/nk.png)](https://micomrkaic.github.io/econ-sims/nk.html) | [![Business cycles](docs/img/cycles.png)](https://micomrkaic.github.io/econ-sims/cycles.html) |
+| **A New Keynesian economy.** A policy rule, sticky prices and shocks; solved live by Cozy. | **Business cycles.** Technology shocks and the table of volatilities they imply; solved live by Cozy. |
+| [![Impulse responses](docs/img/irf.png)](https://micomrkaic.github.io/econ-sims/irf.html) | |
+| **Impulse responses.** One shock, forty quarters, six variables, against a pinned reference. | |
 
 ## The models
 
@@ -76,6 +86,70 @@ price against the value.
 Sliders: limit order rate, market order rate, cancellation rate, informed
 share, volatility of the value, speed; buttons for a large sell or buy order.
 
+## The macro models, solved by Cozy
+
+The three programs below share two models, kept as text in `src/models.h`
+in the notation of Dynare: `x(+1)` is next quarter's `x` as expected today,
+`x(-1)` last quarter's. This is the whole of the New Keynesian model:
+
+    pi = beta * pi(+1) + kappa * x
+    x = x(+1) - (1 / sigma) * (i - pi(+1) - rn)
+    i = phi_pi * pi + phi_x * x + v
+    r = i - pi(+1)
+    rn = rho_n * rn(-1) + en
+    v = rho_v * v(-1) + ev
+
+Each program starts a Cozy interpreter (`cozy_open`), loads Cozy's `dsge`
+package from text carried in the binary, and passes it the model. When a
+slider moves, `dsge.solve` linearises the model around its steady state with
+exact derivatives, checks the Blanchard-Kahn conditions and returns the
+decision rule `y = P y(-1) + Q e`; the C side reads `P` and `Q` as arrays of
+doubles (`cozy_matrix`) and steps and draws the economy with them. A solve
+takes about a millisecond, natively and in the browser. `src/macro.h` is the
+whole bridge, about 80 lines. The equations drawn in each window are the
+strings that were passed to Cozy.
+
+Cozy is vendored in `third_party/cozy` (the interpreter's core, its embedding
+API and the `dsge` package; version and commit in `third_party/cozy/VERSION`)
+and refreshed from a Cozy checkout with `tools/update-cozy.sh`.
+
+### A New Keynesian economy (`src/nk.c`)
+
+The three-equation model of Gali (2015, ch. 3): a Phillips curve, an IS
+curve and an interest-rate rule, with a persistent demand disturbance (the
+natural rate of interest) and a policy disturbance. The economy runs a
+quarter at a time with fresh shocks, and the window plots the output gap,
+inflation and the policy rate, with the volatilities the model implies
+beside those of the run. Lower the rule's response to inflation below the
+Taylor principle's threshold and Cozy reports that the equilibrium is no
+longer unique; the economy stops.
+
+Sliders: the rule's responses to inflation and to the gap, the slope of the
+Phillips curve, the persistence of demand shocks, the sizes of both shocks,
+speed; buttons for a rate hike and a demand shock.
+
+### Business cycles (`src/cycles.c`)
+
+The real business cycle model with a choice of hours: households consume,
+save and work, firms rent capital and labour, and technology follows an
+AR(1). Its steady state has a closed form, supplied as a Cozy function that
+the package verifies. The window plots output, consumption, investment,
+hours and technology in percent from the steady state, and keeps the
+business-cycle table: each series' volatility relative to output and its
+correlation with output, as the model implies (`dsge.moments`) and as the
+run has turned out.
+
+Sliders: persistence and size of technology shocks, risk aversion, the
+inverse elasticity of labour supply, depreciation, speed; buttons for a boom
+and a bust.
+
+### Impulse responses (`src/irf.c`)
+
+Three experiments on those two models: a rise in technology, a monetary
+tightening and a rise in demand. Cozy traces forty quarters after the shock
+(`dsge.irf`) each time a slider moves, and the window draws six small plots
+against a reference path: the textbook calibration, or any setting you pin.
+
 ## Build
 
 Native, with SDL2:
@@ -83,7 +157,10 @@ Native, with SDL2:
     # Debian/Ubuntu: sudo apt install build-essential libsdl2-dev
     # macOS:         brew install sdl2
     make
-    ./build/schelling        # or wealth, bankrun, orderbook
+    ./build/schelling        # or wealth, bankrun, orderbook, nk, cycles, irf
+
+The macro programs compile the vendored Cozy, which is written in C23 and
+needs a compiler that has it: gcc 13 or clang 16, or later.
 
 In the window: drag the sliders; Space pauses, R restarts, Q quits.
 
@@ -117,6 +194,23 @@ Each program has model checks that run without a window (`--test`), then a
   traders cut the gap between price and value by more than half; a large
   order moves the price and the book recovers; re-centring the price grid
   leaves the price where it was.
+- **nk** (12): what Cozy returns is Gali's closed form to ten decimals; the
+  economy stepped in C has the standard deviations Cozy computes; determinacy
+  switches exactly where `kappa (phi_pi - 1) + (1 - beta) phi_x` changes
+  sign; a tougher rule lowers the volatility of inflation; a Cozy error
+  arrives as a message.
+- **cycles** (14): the steady state has the ratios the algebra gives; the
+  decision rule satisfies the resource constraint, the production function
+  and capital accumulation; only capital and technology carry history;
+  consumption is smoother than output and investment over twice as volatile;
+  a million simulated quarters match the theoretical volatilities and
+  correlations; the model solves at every corner of the sliders' ranges.
+- **irf** (16): the traced path is the decision rule applied forty times;
+  capital responds with a hump; a tightening moves the gap and inflation by
+  the closed form's amounts, fades at the shock's persistence and leaves the
+  price level permanently lower; the real rate is the policy rate less
+  expected inflation; a rule that violates the Taylor principle has no
+  unique response.
 
 ## Layout
 
@@ -124,6 +218,10 @@ Each program has model checks that run without a window (`--test`), then a
     src/rng.h        a small seedable random number generator
     src/font8x8.h    public-domain 8x8 bitmap font
     src/*.c          one file per simulation: the model, its checks, its window
+    src/macro.h      the bridge to Cozy: start it, run source, read matrices back
+    src/models.h     the two macro models, as text
+    third_party/cozy the Cozy interpreter and its dsge package (vendored, unedited)
+    tools/           update-cozy.sh refreshes the vendored copy; txt2c puts a text file in a C array
     web/shell.html   the page each browser build is poured into
     docs/            the browser builds and landing page (GitHub Pages serves this folder)
 
@@ -132,5 +230,6 @@ the `main` branch, folder `/docs`.
 
 ## Licence
 
-GPL-3.0-or-later; see `LICENSE`. The font is public domain (Daniel Hepper's
+GPL-3.0-or-later; see `LICENSE`. Cozy, in `third_party/cozy`, is by the same
+author under the same licence. The font is public domain (Daniel Hepper's
 font8x8).

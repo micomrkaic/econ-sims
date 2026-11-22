@@ -34,6 +34,9 @@
     <a href="wealth.html">Wealth</a>
     <a href="bankrun.html">Bank run</a>
     <a href="orderbook.html">Order book</a>
+    <a href="nk.html">New Keynesian</a>
+    <a href="cycles.html">Business cycles</a>
+    <a href="irf.html">Impulse responses</a>
     <a href="https://github.com/micomrkaic/econ-sims">Source</a>
   </nav>
 </header>
@@ -44,7 +47,9 @@
   <div id="about"></div>
 </main>
 <script>
-  // One shell serves all four pages; the text under the canvas is chosen by file name.
+  // One shell serves every page; the text under the canvas is chosen by file name.
+  // The macro pages run on Cozy, an interpreter linked into the simulation.
+  var COZY = "<p>The equations in the picture are not decoration. The program hands that text to <a href=\"https://github.com/micomrkaic/cozy\">Cozy</a>, a small matrix language whose interpreter is compiled into this page, and Cozy's <code>dsge</code> package linearises the model with exact derivatives and solves it, in about a millisecond, each time a slider moves. You can <a href=\"https://micomrkaic.github.io/cozy/dsge.html\">work with the same package directly</a> in Cozy's own playground.</p>";
   var PAGES = {
     schelling: ["Schelling's segregation model",
       "<p>Two groups share a grid with some empty cells. An agent is content if at least a chosen share of its neighbours belong to its own group; a discontent agent moves to an empty cell where it would be content. Nobody in this city wants segregation, yet it sorts itself: agents who would be happy as a 35% minority end up in neighbourhoods that are about three-quarters their own group.</p>" +
@@ -57,7 +62,16 @@
       "<ul><li>Start a rumour at a bank with thin reserves, then repeat with deposit insurance.</li><li>Turn on suspension of withdrawals, or the lender of last resort, and see the run lose its point.</li><li>Raise the fire-sale value of loans: runs stop being rational.</li></ul>"],
     orderbook: ["A limit order book",
       "<p>Traders post offers to buy and sell at prices of their choosing, cancel them at random, or trade at once against the best offer available. Nobody here is clever: orders arrive at random, apart from a share of informed traders who know the asset's fundamental value. A spread, a depth profile and a price that tracks value all emerge from the order flow.</p>" +
-      "<ul><li>Cut the rate of limit orders: the book thins and the spread widens.</li><li>Send a large sell order and watch the price fall through the book and recover.</li><li>Set the informed share to zero: the price forgets the fundamental value.</li></ul>"]
+      "<ul><li>Cut the rate of limit orders: the book thins and the spread widens.</li><li>Send a large sell order and watch the price fall through the book and recover.</li><li>Set the informed share to zero: the price forgets the fundamental value.</li></ul>"],
+    nk: ["A New Keynesian economy, live",
+      "<p>The textbook model of monetary policy: firms that change prices slowly, households that spread spending over time, and a central bank that sets the interest rate by a rule. Demand and policy disturbances arrive every quarter, and the output gap, inflation and the policy rate respond as the model says they must.</p>" +
+      "<ul><li>Lower the rule's response to inflation below one. The model no longer has a single equilibrium, and the economy stops: this is the Taylor principle.</li><li>Press <em>Rate hike</em> and watch output and inflation fall together.</li><li>Raise the response to inflation and compare the central bank's loss.</li></ul>" + COZY],
+    cycles: ["Business cycles, live",
+      "<p>The real business cycle model. Households choose how much to consume, save and work; firms hire capital and labour; technology is the only thing that is disturbed. The model reproduces the best-known regularities of business cycles: investment swings several times as widely as output, consumption is smoother, and all of them move together.</p>" +
+      "<ul><li>Read the table as the run lengthens: the run's figures settle on the model's.</li><li>Raise risk aversion past 4: households dislike uneven consumption so much that hours start to move against output.</li><li>Make technology less persistent, and investment reacts less: a brief windfall is not worth building for.</li></ul>" + COZY],
+    irf: ["Impulse responses",
+      "<p>What happens after a single shock, quarter by quarter: a rise in technology in the business cycle model, or a monetary tightening or a rise in demand in the New Keynesian model. The blue line is the model at the sliders' settings and the grey line a reference, the textbook calibration until you pin another.</p>" +
+      "<ul><li>Choose <em>Rate hike</em>, pin the reference, then steepen the Phillips curve: the same tightening costs less output and removes more inflation.</li><li>Under <em>Technology</em>, lower the persistence and watch the hump in capital disappear.</li><li>Under <em>Demand</em>, raise the rule's response to inflation towards 3: policy absorbs the shock.</li></ul>" + COZY]
   };
   var page = (location.pathname.split("/").pop() || "").replace(/\.html$/, "");
   var info = PAGES[page];
