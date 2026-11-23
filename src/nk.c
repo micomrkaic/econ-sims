@@ -111,9 +111,19 @@ static int run_tests(void)
     Rule soft = TEXTBOOK, hard = TEXTBOOK; hard.phi_pi = 3.0;
     Solution a, b;
     CHECK(model_solve(&soft, &a) && model_solve(&hard, &b) && b.sd[PI] < a.sd[PI], "a tougher rule lowers the volatility of inflation");
+    /* the model is linear: an economy with an extra shock is the economy without it plus the shock's own path */
+    Solution t; Rule tb = TEXTBOOK;
+    bool adds = model_solve(&tb, &t);
+    double with[NV] = {0}, without[NV] = {0}, alone[NV] = {0};
+    for (int q = 0; adds && q < 40; q++) {
+        double e[NS] = {tb.sd_n * rng_normal(&rng), tb.sd_v * rng_normal(&rng)}, plus[NS] = {e[EN], e[EV] + (q == 5)}, only[NS] = {0, q == 5};
+        economy_step(&t, with, plus); economy_step(&t, without, e); economy_step(&t, alone, only);
+        for (int i = 0; i < NV; i++) if (fabs(with[i] - without[i] - alone[i]) > 1e-12) adds = false;
+    }
+    CHECK(adds, "a rate hike adds its own impulse response to whatever else is happening");
     CHECK(!macro_run("let oops = dsge.solve(nk, {no_such = 1});") && strstr(macro_error, "not a parameter"), "a Cozy error comes back as a message");
 #undef CHECK
-    if (!fails) printf("nk: 12 model checks passed (Cozy %s solves the model in %.2f ms)\n", cozy_version(), ms);
+    if (!fails) printf("nk: 13 model checks passed (Cozy %s solves the model in %.2f ms)\n", cozy_version(), ms);
     return fails;
 }
 
@@ -123,6 +133,8 @@ static Rule rule;
 static Solution sol;
 static double y[NV], pending[NS];
 static double hist[3][NQ];                        /* the gap, inflation, the rate */
+static double own[NV], ownhist[3][NQ];            /* the same economy fed only the shocks from the buttons */
+static UiMarks marks;                             /* when the buttons were pressed */
 static int filled;
 static double p_speed = 12, clock_q, solve_ms;
 static Rng rng;
@@ -136,15 +148,27 @@ static void resolve(void)
 static void clear_history(void)
 {
     memset(y, 0, sizeof y); memset(hist, 0, sizeof hist); memset(pending, 0, sizeof pending);
+    memset(own, 0, sizeof own); memset(ownhist, 0, sizeof ownhist);
+    marks.n = 0;
     filled = 0;
 }
 
-static void strip(int x, int yy, int w, int h, const char *title, const double *v, double range, UiColor c, bool xticks)
+/* One series: the economy in colour, and over it in white the part that is
+ * due to the buttons alone, drawn only where there is any. */
+static void strip(int x, int yy, int w, int h, const char *title, int k, double range, UiColor c, bool first)
 {
-    UiPlot p = ui_plot(x, yy, w, h, title, -(NQ - 1), 0, -range, range, xticks ? "%.0f" : NULL, "%.1f");
+    UiPlot p = ui_plot(x, yy, w, h, title, -(NQ - 1), 0, -range, range, k == 2 ? "%.0f" : NULL, "%.1f");
     static double xs[NQ];
     for (int i = 0; i < NQ; i++) xs[i] = i - (NQ - 1);
-    ui_plot_line(&p, xs + (NQ - filled), v + (NQ - filled), filled, c);
+    ui_marks_draw(&marks, &p, first);
+    ui_plot_line(&p, xs + (NQ - filled), hist[k] + (NQ - filled), filled, c);
+    const double *z = ownhist[k], tiny = 0.004 * range;
+    for (int i = NQ - filled; i < NQ; ) {
+        if (fabs(z[i]) < tiny) { i++; continue; }
+        int from = i > NQ - filled ? i - 1 : i;
+        while (i < NQ && fabs(z[i]) >= tiny) i++;
+        ui_plot_line(&p, xs + from, z + from, (i < NQ ? i + 1 : i) - from, UI_INK);
+    }
 }
 
 static void draw(void)
@@ -160,11 +184,13 @@ static void draw(void)
     moved |= ui_slider(sx, yy, sw, "Slope of the Phillips curve", &rule.kappa, 0.02, 0.5, 0.0025, "%.4f"); yy += 46;
     moved |= ui_slider(sx, yy, sw, "Persistence of demand shocks", &rule.rho_n, 0.0, 0.95, 0.05, "%.2f"); yy += 46;
     moved |= ui_slider(sx, yy, sw, "Size of demand shocks", &rule.sd_n, 0.0, 1.0, 0.05, "%.2f"); yy += 46;
+    moved |= ui_slider(sx, yy, sw, "Persistence of policy shocks", &rule.rho_v, 0.0, 0.95, 0.05, "%.2f"); yy += 46;
     moved |= ui_slider(sx, yy, sw, "Size of policy shocks", &rule.sd_v, 0.0, 1.0, 0.05, "%.2f"); yy += 46;
     ui_slider(sx, yy, sw, "Quarters per second", &p_speed, 1, 30, 1, "%.0f"); yy += 50;
     if (moved) resolve();
-    if (ui_button(sx, yy, 118, "Rate hike")) pending[EV] += 1.0;
-    if (ui_button(sx + 127, yy, 118, "Demand up")) pending[EN] += 1.0;
+    bool running = sol.determinate && !broken;
+    if (ui_button(sx, yy, 118, "Rate hike") && running) pending[EV] += 1.0;
+    if (ui_button(sx + 127, yy, 118, "Demand up") && running) pending[EN] += 1.0;
     if (ui_button(sx + 254, yy, 118, "Clear") || ui.reset) clear_history();
     yy += 42;
 
@@ -172,9 +198,16 @@ static void draw(void)
     if (!ui.paused && sol.determinate && !broken) {
         for (clock_q += p_speed / 60.0; clock_q >= 1.0; clock_q -= 1.0) {
             double e[NS] = {rule.sd_n * rng_normal(&rng) + pending[EN], rule.sd_v * rng_normal(&rng) + pending[EV]};
-            pending[EN] = pending[EV] = 0;
+            ui_marks_tick(&marks, NQ);
+            if (pending[EV] != 0) ui_marks_add(&marks, "rate hike");
+            if (pending[EN] != 0) ui_marks_add(&marks, "demand up");
             economy_step(&sol, y, e);
-            for (int k = 0; k < 3; k++) { memmove(hist[k], hist[k] + 1, (NQ - 1) * sizeof(double)); hist[k][NQ - 1] = y[k]; }
+            economy_step(&sol, own, pending);
+            pending[EN] = pending[EV] = 0;
+            for (int k = 0; k < 3; k++) {
+                memmove(hist[k], hist[k] + 1, (NQ - 1) * sizeof(double)); hist[k][NQ - 1] = y[k];
+                memmove(ownhist[k], ownhist[k] + 1, (NQ - 1) * sizeof(double)); ownhist[k][NQ - 1] = own[k];
+            }
             if (filled < NQ) filled++;
         }
     }
@@ -211,9 +244,10 @@ static void draw(void)
     }
     range += (want - range) * 0.05;
     const int cx = 64, cw = 700, ch = 104;
-    strip(cx, 108, cw, ch, "Output gap, %", hist[0], range, UI_S1, false);
-    strip(cx, 250, cw, ch, "Inflation, % a quarter", hist[1], range, UI_S2, false);
-    strip(cx, 392, cw, ch, "Policy rate, % a quarter, from steady state", hist[2], range, UI_S3, true);
+    strip(cx, 108, cw, ch, "Output gap, %", 0, range, UI_S1, true);
+    strip(cx, 250, cw, ch, "Inflation, % a quarter", 1, range, UI_S2, false);
+    strip(cx, 392, cw, ch, "Policy rate, % a quarter, from steady state", 2, range, UI_S3, false);
+    ui_key(cx + cw - 22 - 31 * 8, 86, UI_INK, false, "the effect of your shocks alone");
     ui_text_right(cx + cw, 392 + ch + 20, UI_SMALL, UI_MUTED, "quarters ago");
 
     if (!sol.determinate || broken) {

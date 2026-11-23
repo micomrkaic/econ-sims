@@ -309,6 +309,34 @@ static inline void ui_hist_push(UiHist *h, double v)
     h->v[h->n++] = v;
 }
 
+/* Marks on a scrolling plot whose x axis is "periods ago" (0 at the right
+ * edge): a dashed vertical line where something happened, with a label. */
+#define UI_MARKS_CAP 24
+typedef struct { int age[UI_MARKS_CAP]; const char *label[UI_MARKS_CAP]; int n; } UiMarks;
+static inline void ui_marks_add(UiMarks *m, const char *label)
+{
+    if (m->n == UI_MARKS_CAP) { memmove(m->age, m->age + 1, sizeof m->age - sizeof m->age[0]); memmove(m->label, m->label + 1, sizeof m->label - sizeof m->label[0]); m->n--; }
+    m->age[m->n] = 0; m->label[m->n] = label; m->n++;
+}
+/* One period passes; marks older than `keep` periods are dropped. */
+static inline void ui_marks_tick(UiMarks *m, int keep)
+{
+    int k = 0;
+    for (int i = 0; i < m->n; i++) if (m->age[i] + 1 < keep) { m->age[k] = m->age[i] + 1; m->label[k] = m->label[i]; k++; }
+    m->n = k;
+}
+static inline void ui_marks_draw(const UiMarks *m, const UiPlot *p, bool labels)
+{
+    for (int i = 0; i < m->n; i++) {
+        int x = ui_px(p, -m->age[i]);
+        if (x < p->x || x > p->x + p->w) continue;
+        for (int y = p->y; y < p->y + p->h; y += 6) ui_line(x, y, x, y + 2 < p->y + p->h ? y + 2 : p->y + p->h, UI_MUTED);
+        if (!labels) continue;
+        int w = ui_text_w(m->label[i], UI_SMALL);
+        ui_text(x + 5 + w <= p->x + p->w ? x + 5 : x - 5 - w, p->y + 3, UI_SMALL, UI_INK2, m->label[i]);
+    }
+}
+
 /* ---- frame loop, screenshots ----------------------------------------- */
 static inline void ui_save_bmp(const char *path)
 {

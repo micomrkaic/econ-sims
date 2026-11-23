@@ -125,8 +125,10 @@ Taylor principle's threshold and Cozy reports that the equilibrium is no
 longer unique; the economy stops.
 
 Sliders: the rule's responses to inflation and to the gap, the slope of the
-Phillips curve, the persistence of demand shocks, the sizes of both shocks,
-speed; buttons for a rate hike and a demand shock.
+Phillips curve, the persistence and size of demand and of policy shocks,
+speed; buttons for a rate hike and a demand shock. A press is marked on the
+charts, and a white line traces what your shocks alone have done (the model
+is linear, so their effect simply adds to everything else).
 
 ### Business cycles (`src/cycles.c`)
 
@@ -141,7 +143,8 @@ run has turned out.
 
 Sliders: persistence and size of technology shocks, risk aversion, the
 inverse elasticity of labour supply, depreciation, speed; buttons for a boom
-and a bust.
+and a bust (a technology shock of four standard deviations, marked on the
+charts).
 
 ### Impulse responses (`src/irf.c`)
 
@@ -194,11 +197,12 @@ Each program has model checks that run without a window (`--test`), then a
   traders cut the gap between price and value by more than half; a large
   order moves the price and the book recovers; re-centring the price grid
   leaves the price where it was.
-- **nk** (12): what Cozy returns is Gali's closed form to ten decimals; the
+- **nk** (13): what Cozy returns is Gali's closed form to ten decimals; the
   economy stepped in C has the standard deviations Cozy computes; determinacy
   switches exactly where `kappa (phi_pi - 1) + (1 - beta) phi_x` changes
-  sign; a tougher rule lowers the volatility of inflation; a Cozy error
-  arrives as a message.
+  sign; a tougher rule lowers the volatility of inflation; a rate hike adds
+  exactly its own impulse response to whatever else is happening; a Cozy
+  error arrives as a message.
 - **cycles** (14): the steady state has the ratios the algebra gives; the
   decision rule satisfies the resource constraint, the production function
   and capital accumulation; only capital and technology carry history;

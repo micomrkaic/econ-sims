@@ -126,6 +126,7 @@ static int run_tests(void)
 static Economy econ;
 static Solution sol;
 static double y[NV], pending;
+static UiMarks marks;                             /* when Boom and Bust were pressed */
 static double hist[NV][NQ];
 static int filled;
 static double run2[NV], runy[NV];                 /* this run: sums of squares, and of products with output */
@@ -144,7 +145,7 @@ static void resolve(void)
 static void clear_history(void)
 {
     memset(y, 0, sizeof y); memset(hist, 0, sizeof hist);
-    filled = 0; pending = 0;
+    filled = 0; pending = 0; marks.n = 0;
     clear_run();
 }
 
@@ -174,13 +175,15 @@ static void draw(void)
     moved |= ui_slider(sx, yy, sw, "Depreciation, % a quarter", &econ.delta, 1.0, 10.0, 0.25, "%.2f"); yy += 46;
     ui_slider(sx, yy, sw, "Quarters per second", &p_speed, 1, 30, 1, "%.0f"); yy += 50;
     if (moved) resolve();
-    if (ui_button(sx, yy, 118, "Boom")) pending += 3 * econ.sd;
-    if (ui_button(sx + 127, yy, 118, "Bust")) pending -= 3 * econ.sd;
+    if (ui_button(sx, yy, 118, "Boom") && !broken) pending += 4 * econ.sd;
+    if (ui_button(sx + 127, yy, 118, "Bust") && !broken) pending -= 4 * econ.sd;
     if (ui_button(sx + 254, yy, 118, "Clear") || ui.reset) clear_history();
     yy += 44;
 
     if (!ui.paused && !broken) {
         for (clock_q += p_speed / 60.0; clock_q >= 1.0; clock_q -= 1.0) {
+            ui_marks_tick(&marks, NQ);
+            if (pending != 0) ui_marks_add(&marks, pending > 0 ? "boom" : "bust");
             economy_step(&sol, y, econ.sd * rng_normal(&rng) + pending);
             pending = 0;
             for (int k = 0; k < NV; k++) {
@@ -233,6 +236,7 @@ static void draw(void)
     kx = ui_key(kx, 86, UI_S1, false, "Output");
     kx = ui_key(kx, 86, UI_S3, false, "Consumption");
     ui_key(kx, 86, UI_S2, false, "Investment");
+    ui_marks_draw(&marks, &p, true);
     ui_plot_line(&p, xs + (NQ - filled), hist[I] + (NQ - filled), filled, UI_S2);
     ui_plot_line(&p, xs + (NQ - filled), hist[C] + (NQ - filled), filled, UI_S3);
     ui_plot_line(&p, xs + (NQ - filled), hist[Y] + (NQ - filled), filled, UI_S1);
@@ -241,6 +245,7 @@ static void draw(void)
     ui_text(cx, 308, UI_BODY, UI_INK, "% from steady state");
     kx = ui_key(cx + 180, 308, UI_INK, false, "Hours worked");
     ui_key(kx, 308, UI_MUTED, false, "Technology");
+    ui_marks_draw(&marks, &q, false);
     ui_plot_line(&q, xs + (NQ - filled), hist[A] + (NQ - filled), filled, UI_MUTED);
     ui_plot_line(&q, xs + (NQ - filled), hist[N] + (NQ - filled), filled, UI_INK);
     ui_text_right(cx + cw, 334 + 110 + 20, UI_SMALL, UI_MUTED, "quarters ago");
